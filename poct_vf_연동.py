@@ -29,35 +29,36 @@ def dctime_search(mgdata, caseidx):
             wr.writerow(row)
 
 def translate_lab(labname):
-    dictlab = {'Lactic acid[POCT, ABGA]': 'Lactic acid',
-                'HCO3- [POCT]': 'HCO3-',
-                'Hct[POCT, ABGA]': 'Hct',
-                'pH[POCT]': 'pH', 
-                'pO₂[POCT]': 'pO₂',
-                'pCO₂[POCT]': 'pCO₂',
-                'O₂SAT[POCT]': 'O₂SAT',
-                'Sodium(serum)[POCT, ABGA]': 'Sodium',
-                'Potassium(serum)[POCT, ABGA]': 'Potassium',
-                'Calcium, ionized [POCT, ABGA]': 'Calcium, ionized',
-                'Glucose [POCT, ABGA]': 'Glucose',
-                'BE[POCT]': 'BE',
-                'CO2, total(serum)[POCT, ABGA]': 'CO2, total',
-                'Hb[POCT, ABGA]': 'Hb',
-                '[POCT, ABGA]Hct' : 'Hct', 
-                '[POCT, ABGA]Sodium': 'Sodium', 
-                '[POCT, ABGA]Potassium': 'Potassium',
-                '[POCT, ABGA]CO2, total': 'CO2, total',
-                '[POCT, ABGA]Calcium, ionized': 'Calcium, ionized',
-                '[POCT, ABGA]Glucose': 'Glucose', 
-                '[POCT, ABGA]Lactic acid': 'Lactic acid',
-                '[POCT, ABGA]Hb': 'Hb',
-                'pCO₂[POCT] ( = pCO2[POCT])': 'pCO₂',
-                'O₂SAT[POCT] ( = O2SAT[POCT])': 'O₂SAT',
-                'pO₂[POCT] ( = pO2[POCT])': 'pO₂',
-                'Chloride(serum)[POCT, ABGA]': 'Chloride',
-                '[POCT, ABGA]Chloride': 'Chloride'
-                }
     return dictlab[labname]
+
+dictlab = {'Lactic acid[POCT, ABGA]': 'Lactic acid',
+            'HCO3- [POCT]': 'HCO3-',
+            'Hct[POCT, ABGA]': 'Hct',
+            'pH[POCT]': 'pH', 
+            'pO₂[POCT]': 'pO₂',
+            'pCO₂[POCT]': 'pCO₂',
+            'O₂SAT[POCT]': 'O₂SAT',
+            'Sodium(serum)[POCT, ABGA]': 'Sodium',
+            'Potassium(serum)[POCT, ABGA]': 'Potassium',
+            'Calcium, ionized [POCT, ABGA]': 'Calcium, ionized',
+            'Glucose [POCT, ABGA]': 'Glucose',
+            'BE[POCT]': 'BE',
+            'CO2, total(serum)[POCT, ABGA]': 'CO2, total',
+            'Hb[POCT, ABGA]': 'Hb',
+            '[POCT, ABGA]Hct' : 'Hct', 
+            '[POCT, ABGA]Sodium': 'Sodium', 
+            '[POCT, ABGA]Potassium': 'Potassium',
+            '[POCT, ABGA]CO2, total': 'CO2, total',
+            '[POCT, ABGA]Calcium, ionized': 'Calcium, ionized',
+            '[POCT, ABGA]Glucose': 'Glucose', 
+            '[POCT, ABGA]Lactic acid': 'Lactic acid',
+            '[POCT, ABGA]Hb': 'Hb',
+            'pCO₂[POCT] ( = pCO2[POCT])': 'pCO₂',
+            'O₂SAT[POCT] ( = O2SAT[POCT])': 'O₂SAT',
+            'pO₂[POCT] ( = pO2[POCT])': 'pO₂',
+            'Chloride(serum)[POCT, ABGA]': 'Chloride',
+            '[POCT, ABGA]Chloride': 'Chloride'
+            }
 
 if os.path.exists(POCT_FILENAME):
     dfdata = pd.read_csv(POCT_FILENAME,  compression='xz', encoding='utf-8-sig', parse_dates=['검사시행일'])
@@ -98,16 +99,27 @@ result['index'] = result.index
 result['labname'] = result['검사세부항목명'].apply(translate_lab)
 print(result)
 
-dfresult = pd.DataFrame()
+dfresult = pd.DataFrame(columns=['case_index','lab_index','환자번호','수술일자','파일명','Sampling time']+list({name for name in dictlab.values()}))
 filelist = result[['수술일자','환자번호','파일명','index']].drop_duplicates().values
-for row in filelist:
-    opdate = row[0]
-    hid = row[1]
-    filename = row[2]
-    case_idx = row[3]
-    data = result.loc[result['파일명']==filename].sort_values(by='검사시행일')
-    timelist = list(data['검사시행일'].unique())
-    for lab_idx, time in enumerate(timelist):
-        resultlist = data.loc[data['검사시행일']==time][['index','labname','검사결과']].transpose()
-        resultlist = resultlist.rename(columns=resultlist.iloc[0])
-        resultlist = resultlist.drop(resultlist.index[0])
+count = 0
+try:
+    for row in filelist:
+        opdate = row[0]
+        hid = row[1]
+        filename = row[2]
+        case_idx = row[3]
+        data = result.loc[result['파일명']==filename].sort_values(by='검사시행일')
+        timelist = list(data['검사시행일'].unique())
+        for lab_idx, time in enumerate(timelist):
+            resultlist = data.loc[data['검사시행일']==time][['labname','검사결과']].drop_duplicates().transpose()
+            resultlist.columns = resultlist.iloc[0]
+            resultlist = resultlist.iloc[1].append(pd.Series({'case_index':case_idx, 'lab_index':lab_idx+1, '환자번호':hid,'수술일자':opdate,'파일명':filename, 'Sampling time':time}))
+            dfresult = dfresult.append(resultlist.T, ignore_index=True)
+        count += 1
+        if count%1000 == 0 :
+            print(f'{count}/{len(filelist)}...')
+except:
+    print(data)
+    print(resultlist)
+    dfresult.to_csv('except_test.csv', index=False, encoding='utf-8-sig') 
+dfresult.to_csv('poct_preprocessing_result.csv', index=False, encoding='utf-8-sig')
