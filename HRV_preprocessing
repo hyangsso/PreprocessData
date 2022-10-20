@@ -1,0 +1,59 @@
+import pandas as pd
+import os
+import datetime
+
+os.chdir('C:/Users/vitalDB/Desktop/project/')
+HID_FILENAME = 'cpb_hid_indfo.xlsx'
+OP_FILENAME = '수술기록지_data.xlsx'
+EKG_FILENAME = 'EKG_data.xlsx'
+NOTE_FILENAME = 'note_data.xlsx'
+
+def optime(orout, recorddate):
+    if (orout<=recorddate):
+        return 1
+    else:
+        return 0   
+
+dfhid = pd.read_excel(HID_FILENAME, sheet_name='cardiac', usecols = ['파일명','환자번호','수술일자','입실시간','퇴실시간','CPB'], parse_dates=['수술일자','입실시간','퇴실시간'])
+# CPB가 1인 환자들만
+dfhid = dfhid[dfhid.CPB==1].drop_duplicates(['환자번호','입실시간'])
+
+# 수술기록지 description result
+dfop = pd.read_excel(OP_FILENAME, skiprows=1, parse_dates=['서식작성일'])
+opdata = dfop[['환자번호','서식작성일','서식명','서식내용']].groupby(['환자번호','서식작성일','서식명'], as_index=False).agg(lambda x: '\n'.join(set(x)))
+opdata['dt'] = pd.to_datetime(opdata['서식작성일'].dt.date)
+
+opresult = pd.merge_asof(dfhid.sort_values('퇴실시간'), opdata[['환자번호','서식작성일','서식내용']].sort_values('서식작성일'), left_on='퇴실시간', right_on='서식작성일', by='환자번호', direction='nearest')
+
+# postop result
+dfcontent = pd.DataFrame(opresult['서식내용'].str.split('\n').apply(lambda x: pd.Series(x)).stack().reset_index(level=1, drop=True), columns=['contents'])
+dftest = pd.merge(opresult, dfcontent, left_index=True, right_index=True, how='left') 
+postop = dftest[dftest.contents.str.contains('postop EKG|pacing wire', na=False, case=False)].groupby('서식내용', as_index=False).agg(lambda x: '\n'.join(set(x))) 
+
+postresult = pd.merge(opresult, postop, on='서식내용', how='left')
+
+# pacing 여부 result
+dfekg = pd.read_excel(EKG_FILENAME, skiprows=1, parse_dates=['[간호기록]기록작성일시'], usecols=['환자번호','[간호기록]기록작성일시', 'Attribute', 'Value'])
+dfekg = dfekg[(dfekg['Attribute']=='기타 부정맥 종류') & (dfekg['Value'].str.contains('pacing', na=False, case=False))]
+
+dfekg['pacing'] = 1
+ekgresult = pd.merge_asof(postresult, dfekg[['환자번호','[간호기록]기록작성일시','pacing']].sort_values('[간호기록]기록작성일시'), left_on='퇴실시간', right_on='[간호기록]기록작성일시', by='환자번호', direction='forward', tolerance=pd.Timedelta('5 days'))
+
+# 마취기록지 time result
+dfnote = pd.read_excel(NOTE_FILENAME) 
+dfnote = dfnote[dfnote['val'].str.contains('cannulation|pump|ACC', na=False, case=False)]
+
+datalist = ['IVC cannulation','SVC cannulation','AO cannulation','pump on','acc on','acc off','pump off']
+
+dfresult = dfhid.copy()
+for filename in dfhid['파일명'].values:
+    data = dfnote.loc[dfnote['filename']==filename]
+    
+    for col in datalist:
+        dt = data.loc[data['val'].str.contains(col, na=False, case=False),'dt']
+        
+        if len(dt) == 1:
+            val = dt.iloc[0]
+            dfresult.loc[dfresult['파일명']==filename, col] = str(val)
+
+dfresult.to_excel('마취기록지_result.xlsx', index=False)
