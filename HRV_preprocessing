@@ -4,7 +4,7 @@ import datetime
 
 os.chdir('C:/Users/vitalDB/Desktop/project/')
 HID_FILENAME = 'cpb_hid_indfo.xlsx'
-OP_FILENAME = '수술기록지_data.xlsx'
+OP_FILENAME = '수술기록지_data_total.xlsx'
 EKG_FILENAME = 'EKG_data.xlsx'
 NOTE_FILENAME = 'note_data.xlsx'
 
@@ -14,12 +14,13 @@ def optime(orout, recorddate):
     else:
         return 0   
 
-dfhid = pd.read_excel(HID_FILENAME, sheet_name='cardiac', usecols = ['파일명','환자번호','수술일자','입실시간','퇴실시간','CPB'], parse_dates=['수술일자','입실시간','퇴실시간'])
+dfhid = pd.read_excel(HID_FILENAME, sheet_name='cardiac', usecols = ['파일명','환자번호','수술일자','입실시간','퇴실시간','CPB'], parse_dates=['수술일자','입실시간','퇴실시간']).drop_duplicates(['환자번호','입실시간'])
 # CPB가 1인 환자들만
-dfhid = dfhid[dfhid.CPB==1].drop_duplicates(['환자번호','입실시간'])
+dfhid = dfhid[dfhid.CPB==1]
 
 # 수술기록지 description result
 dfop = pd.read_excel(OP_FILENAME, skiprows=1, parse_dates=['서식작성일'])
+dfop['서식내용'].fillna('', inplace=True) 
 opdata = dfop[['환자번호','서식작성일','서식명','서식내용']].groupby(['환자번호','서식작성일','서식명'], as_index=False).agg(lambda x: '\n'.join(set(x)))
 opdata['dt'] = pd.to_datetime(opdata['서식작성일'].dt.date)
 
@@ -41,19 +42,35 @@ ekgresult = pd.merge_asof(postresult, dfekg[['환자번호','[간호기록]기�
 
 # 마취기록지 time result
 dfnote = pd.read_excel(NOTE_FILENAME) 
-dfnote = dfnote[dfnote['val'].str.contains('cannulation|pump|ACC', na=False, case=False)]
+dfnote = dfnote[dfnote['val'].str.contains('cannulation|pump|ACC|cpb', na=False, case=False)]
 
-datalist = ['IVC cannulation','SVC cannulation','AO cannulation','pump on','acc on','acc off','pump off']
+datalist = ['IVC cannulation','SVC cannulation','AO cannulation','pump on|cpb on','acc on','acc off','pump off|cpb off']
 
 dfresult = dfhid.copy()
 for filename in dfhid['파일명'].values:
     data = dfnote.loc[dfnote['filename']==filename]
     
     for col in datalist:
-        dt = data.loc[data['val'].str.contains(col, na=False, case=False),'dt']
-        
-        if len(dt) == 1:
+        dt = data.loc[data['val'].str.contains(col, na=False, case=False),'dt'].sort_values(ascending=True)       
+        if len(dt) > 0: 
             val = dt.iloc[0]
             dfresult.loc[dfresult['파일명']==filename, col] = str(val)
 
-dfresult.to_excel('마취기록지_result.xlsx', index=False)
+dfresult.to_excel('마취기록지_result_cpb.xlsx', index=False)
+
+dfop = dfop[dfop['서식항목명'].str.contains('수술명|수술전진단명|수술후진단명')]
+dfop.loc[dfop['서식항목명'].str.contains('수술명'), 'opname'] = '수술명'
+dfop.loc[dfop['서식항목명'].str.contains('수술전진단명'), 'opname'] = '수술전 진단명'
+dfop.loc[dfop['서식항목명'].str.contains('수술후진단명'), 'opname'] = '수술후 진단명'
+
+opdata = dfop[['환자번호','서식작성일','opname','서식내용']].groupby(['환자번호','서식작성일','opname'], as_index=False).agg(lambda x: '\n'.join(set(x)))
+
+result = pd.merge(opdata, opresult[['환자번호','서식작성일','파일명']], how='left', on=['환자번호','서식작성일'])
+
+dfresult = dfhid.copy()
+for row in result[['파일명','서식내용','opname']].values:
+    filename = row[0]
+    contents = row[1]
+    opname = row[2]
+    
+    dfresult.loc[dfresult['파일명']==filename, opname] = contents
