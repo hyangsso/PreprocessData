@@ -195,7 +195,7 @@ if PREPROCESS:
         dfresult.to_csv('poct_preprocessing_result_total.csv', index=False, encoding='utf-8-sig')
         quit()
         
-vitaldb.api.login('admin','vital2469!','172.16.142.27')
+vitaldb.api.login('','','')
 
 dfresult = pd.read_csv('poct_preprocessing_result_total.csv')
 dfresult['Sampling time'] = dfresult['Sampling time'].astype('datetime64[s]').apply(lambda x: x.replace(microsecond=0))
