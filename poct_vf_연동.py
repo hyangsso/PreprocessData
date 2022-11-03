@@ -15,12 +15,12 @@ filelist = ['abga_data_por.xlsx']
 POCT_FILENAME = 'poct_data_por.csv.xz'
 POCT_RESULT_NAME = 'poct_data_final.csv.xz'
 HID_FILENAME = 'POCT_20221020.xlsx'
-FINAL_RESULT_NAME = 'poct_vf_add_result_221027.csv'
+FINAL_RESULT_NAME = 'poct_vf_add_result_221101.csv'
 
 USE_MULTIPROCESS = True
 MAKE_POCTFILE = False
 PREPROCESS = False
-RPOCEED_FILE = True
+RPOCEED_FILE = False
 
 root_dir = 'E:/SynologyDrive/OR_matched/'
 
@@ -335,7 +335,7 @@ trklist = ['Bx50/AGENT_ET',
         'Primus/GAS1_AGENT',
         'Primus/GAS1_EXPIRED',
         'Primus/GAS2_AGENT',
-        'Primus/GAS2_EXPIRED'
+        'Primus/GAS2_EXPIRED',
         'Primus/INCO2',
         'Primus/INCO2_KPA',
         'Primus/INCO2_PERCENT',
