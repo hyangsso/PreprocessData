@@ -1,53 +1,55 @@
-from re import L
 import vitaldb
 import pandas as pd
 import os
 from joblib import Parallel, delayed
 import csv
 import warnings
-from pytz import timezone
 warnings.filterwarnings(action='ignore')
 
-KST = timezone('Asia/Seoul')
-
 os.chdir('C:/Users/vitalDB/Desktop/project/')
-filelist = ['abga_data_por.xlsx']
-POCT_FILENAME = 'poct_data_por.csv.xz'
-POCT_RESULT_NAME = 'poct_data_final.csv.xz'
-HID_FILENAME = 'POCT_20221020.xlsx'
-FINAL_RESULT_NAME = 'poct_vf_add_result_221101.csv'
+filelist = ['abga_data_por.xlsx'] # POCT data files
+POCT_FILENAME = 'poct_data_por.csv.xz' # merged with POCT data files
+PREPROCESSED_FILENAME = 'poct_data_final.csv.xz' # POCT preprocessed filename 
+POCT_RESULT_FILENAME = 'poct_preprocessing_result_total.csv' # POCT result filename
+HID_FILENAME = 'POCT_20221020.xlsx' # hid information filename
+FINAL_RESULT_FILENAME = 'poct_vf_add_result_221101.csv' # final result filename
 
-USE_MULTIPROCESS = True
-MAKE_POCTFILE = False
-PREPROCESS = False
-RPOCEED_FILE = False
+USE_MULTIPROCESS = True # if you want to multiprocess, True
+MAKE_POCTFILE = False # if you make new poct file, True 
+PREPROCESS = False # if there is no preprocessed file, True 
+RPOCEED_FILE = False # if you want to continue with the interrupted file, True
 
 root_dir = 'E:/SynologyDrive/OR_matched/'
 
+# find the path of the file
 def print_files_in_dir(root_dir, filename):
     for root, _, file in os.walk(root_dir):
         if filename in file:
             return os.path.join(root, filename).replace('\\','/')
 
+# orin <= recorddate and recorddate <= orout
 def dctime(orin, recorddate, orout):
     if (orin<=recorddate) & (recorddate<=orout):
         return 1
     else:
         return 0
 
+# add data to .csv 
 def dctime_search(mgdata, caseidx):
     mgdata = mgdata.loc[caseidx]
     mgdata['ordata'] = mgdata.apply(lambda x: dctime(x['입실시간'], x['검사시행일'], x['퇴실시간']), axis=1)
     result = mgdata[mgdata['ordata'] == 1]
     
     for row in result.values:
-        with open(POCT_RESULT_NAME, 'a', newline='', encoding='utf-8-sig') as f:
+        with open(PREPROCESSED_FILENAME, 'a', newline='', encoding='utf-8-sig') as f:
             wr = csv.writer(f)
             wr.writerow(row)
 
+# change the test lab name to fit the format
 def translate_lab(labname):
     return dictlab[labname]
 
+# add the track value of the vitalfile at the same time as 'Sampling time'
 def add_vital_track(dfresult, filename):
     filepath = print_files_in_dir(root_dir, filename)
         
@@ -76,10 +78,11 @@ def add_vital_track(dfresult, filename):
                     
                 vfresult = vfresult.append(result, ignore_index=True)
                 
-                with open(FINAL_RESULT_NAME, 'a', newline='', encoding='utf-8-sig') as f:
+                with open(FINAL_RESULT_FILENAME, 'a', newline='', encoding='utf-8-sig') as f:
                     wr = csv.writer(f)
                     wr.writerow(vfresult.values[0])
 
+# lab dictionary
 dictlab = {'Lactic acid[POCT, ABGA]': 'Lactic acid',
             'HCO3- [POCT]': 'HCO3-',
             'Hct[POCT, ABGA]': 'Hct',
@@ -110,6 +113,7 @@ dictlab = {'Lactic acid[POCT, ABGA]': 'Lactic acid',
             }
 
 if MAKE_POCTFILE:
+    # merged POCT raw files
     if not os.path.exists(POCT_FILENAME):
         dfdata = pd.read_csv(POCT_FILENAME,  compression='xz', encoding='utf-8-sig', parse_dates=['검사시행일'])
         print(f'using poct file: {POCT_FILENAME}')
@@ -123,8 +127,8 @@ if MAKE_POCTFILE:
         
         dfdata = dfdata[['환자번호','검사시행일','검사코드','검사세부항목명','검사결과']]
         dfdata.to_csv(POCT_FILENAME, index=False, encoding='utf-8-sig')
-
-    if not os.path.exists(POCT_RESULT_NAME):
+    # 
+    if not os.path.exists(PREPROCESSED_FILENAME):
         print('reading file...')
         dfor = pd.read_excel(HID_FILENAME, sheet_name='vital list_202209', usecols=['index','환자번호','수술일자','입실시간','퇴실시간','파일명'], parse_dates=['입실시간','퇴실시간']).drop_duplicates(['환자번호','파일명'])
 
@@ -135,7 +139,7 @@ if MAKE_POCTFILE:
         idxes = [listidx[i * n:(i + 1) * n] for i in range((len(listidx) + n - 1) // n )]
             
         print('merging data...')
-        with open(POCT_RESULT_NAME, 'a', newline='', encoding='utf-8-sig') as f:
+        with open(PREPROCESSED_FILENAME, 'a', newline='', encoding='utf-8-sig') as f:
             wr = csv.writer(f)
             wr.writerow(mgdata.columns)
         if USE_MULTIPROCESS:
@@ -144,8 +148,8 @@ if MAKE_POCTFILE:
             for idx in idxes: dctime_search(mgdata,idx)
 
 if PREPROCESS:
-    print(f'start preprocessing... using file: {POCT_RESULT_NAME}')
-    result = pd.read_csv(POCT_RESULT_NAME, dtype={'검사결과':object})
+    print(f'start preprocessing... using file: {PREPROCESSED_FILENAME}')
+    result = pd.read_csv(PREPROCESSED_FILENAME, dtype={'검사결과':object})
     result['index'] = result['Unnamed: 0'] 
     # result.columns = ['수술일자', '환자번호', '입실시간', '퇴실시간', '파일명', '검사시행일', '검사코드','검사세부항목명','검사결과','True']
     # result['index'] = result.index
@@ -192,12 +196,12 @@ if PREPROCESS:
         dfresult.to_csv('except_test.csv', index=False, encoding='utf-8-sig') 
 
     else:
-        dfresult.to_csv('poct_preprocessing_result_total.csv', index=False, encoding='utf-8-sig')
+        dfresult.to_csv(POCT_RESULT_FILENAME, index=False, encoding='utf-8-sig')
         quit()
         
 vitaldb.api.login('','','')
 
-dfresult = pd.read_csv('poct_preprocessing_result_total.csv')
+dfresult = pd.read_csv(POCT_RESULT_FILENAME)
 dfresult['Sampling time'] = dfresult['Sampling time'].astype('datetime64[s]').apply(lambda x: x.replace(microsecond=0))
 
 trklist = ['Bx50/AGENT_ET',
@@ -431,7 +435,7 @@ cols = ['case_index', 'lab_index', 'Sampling time'] + trklist
 
 filelist = dfresult['파일명'].drop_duplicates().values
 
-with open(FINAL_RESULT_NAME, 'a', newline='', encoding='utf-8-sig') as f:
+with open(FINAL_RESULT_FILENAME, 'a', newline='', encoding='utf-8-sig') as f:
     wr = csv.writer(f)
     wr.writerow(cols)
 
